@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/agilno-it-poslovanje/static/css/main.808d0476.css",
-    "main.js": "/agilno-it-poslovanje/static/js/main.ead947e9.js",
+    "main.css": "/agilno-it-poslovanje/static/css/main.9d637b77.css",
+    "main.js": "/agilno-it-poslovanje/static/js/main.6d46be14.js",
     "static/js/453.60e886bc.chunk.js": "/agilno-it-poslovanje/static/js/453.60e886bc.chunk.js",
     "index.html": "/agilno-it-poslovanje/index.html",
-    "main.808d0476.css.map": "/agilno-it-poslovanje/static/css/main.808d0476.css.map",
-    "main.ead947e9.js.map": "/agilno-it-poslovanje/static/js/main.ead947e9.js.map",
+    "main.9d637b77.css.map": "/agilno-it-poslovanje/static/css/main.9d637b77.css.map",
+    "main.6d46be14.js.map": "/agilno-it-poslovanje/static/js/main.6d46be14.js.map",
     "453.60e886bc.chunk.js.map": "/agilno-it-poslovanje/static/js/453.60e886bc.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.808d0476.css",
-    "static/js/main.ead947e9.js"
+    "static/css/main.9d637b77.css",
+    "static/js/main.6d46be14.js"
   ]
 }
