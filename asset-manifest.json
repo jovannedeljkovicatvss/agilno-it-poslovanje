@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/agilno-it-poslovanje/static/css/main.773af0f6.css",
-    "main.js": "/agilno-it-poslovanje/static/js/main.3518ef6b.js",
+    "main.js": "/agilno-it-poslovanje/static/js/main.3e2e27a7.js",
     "static/js/453.60e886bc.chunk.js": "/agilno-it-poslovanje/static/js/453.60e886bc.chunk.js",
     "index.html": "/agilno-it-poslovanje/index.html",
     "main.773af0f6.css.map": "/agilno-it-poslovanje/static/css/main.773af0f6.css.map",
-    "main.3518ef6b.js.map": "/agilno-it-poslovanje/static/js/main.3518ef6b.js.map",
+    "main.3e2e27a7.js.map": "/agilno-it-poslovanje/static/js/main.3e2e27a7.js.map",
     "453.60e886bc.chunk.js.map": "/agilno-it-poslovanje/static/js/453.60e886bc.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.773af0f6.css",
-    "static/js/main.3518ef6b.js"
+    "static/js/main.3e2e27a7.js"
   ]
 }
