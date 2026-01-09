@@ -1,128 +1,441 @@
 import React, { useState, useEffect } from 'react';
-import './Competition.css';
+import { db } from '../../firebase/config';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore'; // DODAJ OVO
+import './Leaderboard.css';
 
 function Leaderboard() {
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [myStats, setMyStats] = useState(null);
-  const [timeframe, setTimeframe] = useState('all');
+  const [leaderboardData, setLeaderboardData] = useState([]);
+  const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [dataSource, setDataSource] = useState('firebase'); // 'firebase' ili 'local'
 
   useEffect(() => {
-    fetchLeaderboard();
-    fetchMyStats();
-  }, [timeframe]);
+    loadLeaderboard();
+  }, [timeFilter]);
 
-  const fetchLeaderboard = async () => {
+  const loadLeaderboard = async () => {
+    setLoading(true);
+    setError('');
+    
     try {
-      setLoading(true);
-      const response = await fetch('http://localhost:5000/api/leaderboard');
+      console.log('📊 Učitavam rang listu...');
       
-      if (!response.ok) {
-        throw new Error('Greška pri učitavanju rang liste');
+      // PRVO POKUŠAJ FIREBASE
+      try {
+        const results = await loadFromFirebase();
+        if (results.length > 0) {
+          setDataSource('firebase');
+          processData(results);
+          return;
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase greška:', firebaseError);
       }
       
-      const data = await response.json();
-      setLeaderboard(data);
+      // PA POKUŠAJ LOCALSTORAGE
+      const localResults = JSON.parse(localStorage.getItem('quizResults') || '[]');
+      if (localResults.length > 0) {
+        setDataSource('local');
+        processData(localResults);
+      } else {
+        // AKO NEMA PODATAKA - DEMO
+        generateDemoLeaderboard();
+        setDataSource('demo');
+      }
+      
     } catch (err) {
-      setError(err.message);
-      // Fallback mock data ako server ne radi
-      setLeaderboard(getMockLeaderboard());
+      console.error('Error loading leaderboard:', err);
+      setError('Greška pri učitavanju rang liste.');
+      generateDemoLeaderboard();
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchMyStats = async () => {
+  const loadFromFirebase = async () => {
+    console.log('🔍 Učitavam iz Firebase...');
+    
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
+      // Učitaj sve rezultate
+      const resultsRef = collection(db, "quizResults");
+      let q;
       
-      const response = await fetch('http://localhost:5000/api/my-results', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        calculateMyStats(data);
+      // Prilagodi query za vremenski filter
+      if (timeFilter === 'today') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        // Ovo zahteva indeks, probaj bez filtera prvo
+        q = query(resultsRef, orderBy("submittedAt", "desc"));
+      } else if (timeFilter === 'week') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        q = query(resultsRef, orderBy("submittedAt", "desc"));
+      } else {
+        q = query(resultsRef, orderBy("submittedAt", "desc"));
       }
-    } catch (err) {
-      console.error('Error fetching my stats:', err);
-      // Fallback mock stats
-      setMyStats({
-        avgScore: 87,
-        attempts: 15,
-        rank: 8,
-        bestScore: 95,
-        avgTime: 52
+      
+      const snapshot = await getDocs(q);
+      const results = [];
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        
+        // Filtriranje na klijentu za vremenski filter
+        if (timeFilter !== 'all') {
+          const submittedDate = data.submittedAt?.toDate?.() || new Date(data.submittedAt || data.createdAt);
+          const now = new Date();
+          
+          if (timeFilter === 'today') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (submittedDate < today) return;
+          } else if (timeFilter === 'week') {
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            if (submittedDate < weekAgo) return;
+          }
+        }
+        
+        results.push({
+          id: doc.id,
+          ...data,
+          submittedDate: data.submittedAt?.toDate?.() || new Date(data.submittedAt || data.createdAt)
+        });
       });
+      
+      console.log(`✅ Učitano ${results.length} rezultata iz Firebase`);
+      return results;
+      
+    } catch (error) {
+      console.error('❌ Greška pri učitavanju iz Firebase:', error);
+      return [];
     }
   };
 
-  const calculateMyStats = (results) => {
-    if (!results || results.length === 0) {
-      setMyStats({
-        avgScore: 0,
-        attempts: 0,
-        rank: '-',
-        bestScore: 0,
-        avgTime: 0
-      });
-      return;
-    }
+  const processData = (quizResults) => {
+    const userStats = {};
     
-    const avgScore = results.reduce((sum, result) => sum + result.percentage, 0) / results.length;
-    const bestScore = Math.max(...results.map(r => r.percentage));
-    const avgTime = results.reduce((sum, result) => sum + (result.timeSpent || 0), 0) / results.length;
-    
-    setMyStats({
-      avgScore: Math.round(avgScore),
-      attempts: results.length,
-      rank: '-', // Ovo bi se izračunalo na serveru
-      bestScore: Math.round(bestScore),
-      avgTime: Math.round(avgTime)
+    quizResults.forEach(result => {
+      const userId = result.userId || result.email || 'anonymous';
+      const userName = result.studentName || result.userName || result.email || 'Anonimni korisnik';
+      const studentId = result.studentId || result.index || 'N/A';
+      
+      if (!userStats[userId]) {
+        userStats[userId] = {
+          userId: userId,
+          name: userName,
+          studentId: studentId,
+          totalPercentage: 0,
+          totalQuizzes: 0,
+          bestPercentage: 0,
+          averagePercentage: 0,
+          lastActivity: result.submittedDate || result.submittedAt || result.createdAt || new Date(),
+          // Dodatno za statistiku
+          totalScore: 0,
+          totalTime: 0
+        };
+      }
+      
+      // Koristi percentage (broj)
+      const percentageValue = Number(result.percentage) || 0;
+      const timeSpent = Number(result.timeSpent) || 0;
+      
+      userStats[userId].totalPercentage += percentageValue;
+      userStats[userId].totalScore += percentageValue;
+      userStats[userId].totalQuizzes += 1;
+      userStats[userId].totalTime += timeSpent;
+      userStats[userId].bestPercentage = Math.max(
+        userStats[userId].bestPercentage, 
+        percentageValue
+      );
+      
+      // Ažuriraj poslednju aktivnost
+      const resultDate = result.submittedDate || result.submittedAt || result.createdAt;
+      if (resultDate) {
+        const currentDate = new Date(userStats[userId].lastActivity);
+        const newDate = new Date(resultDate);
+        if (newDate > currentDate) {
+          userStats[userId].lastActivity = newDate;
+        }
+      }
     });
+    
+    // Izračunaj proseke
+    const processedData = Object.values(userStats)
+      .map(user => ({
+        ...user,
+        averagePercentage: user.totalQuizzes > 0 
+          ? Math.round(user.totalPercentage / user.totalQuizzes) 
+          : 0,
+        averageTime: user.totalQuizzes > 0
+          ? Math.round(user.totalTime / user.totalQuizzes / 60) // u minutima
+          : 0
+      }))
+      .filter(user => user.totalQuizzes > 0) // Prikaži samo one sa rezultatima
+      .sort((a, b) => b.averagePercentage - a.averagePercentage)
+      .slice(0, 50); // Povećaj limit
+    
+    // KREIRAJ PODATKE ZA GRAFIKON
+    const chartDataForGraph = processedData
+      .slice(0, 8) // Uzmi top 8 za grafikon
+      .map((student, index) => ({
+        id: student.userId,
+        name: student.name.split(' ')[0] || student.name, // Samo prvo ime
+        fullName: student.name,
+        score: student.averagePercentage,
+        quizzes: student.totalQuizzes,
+        color: getColorForIndex(index)
+      }));
+    
+    console.log('Processed data:', {
+      totalStudents: processedData.length,
+      source: dataSource,
+      topStudent: processedData[0]?.name
+    });
+    
+    if (processedData.length === 0) {
+      setError('Nema rezultata za prikaz. Budite prvi koji će uraditi kviz!');
+    } else {
+      setLeaderboardData(processedData);
+      setChartData(chartDataForGraph);
+    }
   };
 
-  const getMockLeaderboard = () => {
-    return [
-      { username: 'Marko Marković', avgScore: 95, attempts: 10, bestScore: 98, avgTimePerQuiz: 45 },
-      { username: 'Ana Anić', avgScore: 92, attempts: 8, bestScore: 96, avgTimePerQuiz: 50 },
-      { username: 'Petar Petrović', avgScore: 88, attempts: 12, bestScore: 92, avgTimePerQuiz: 55 },
-      { username: 'Jovana Jovanović', avgScore: 85, attempts: 6, bestScore: 90, avgTimePerQuiz: 48 },
-      { username: 'Nikola Nikolić', avgScore: 82, attempts: 9, bestScore: 88, avgTimePerQuiz: 60 },
-      { username: 'Mila Milić', avgScore: 80, attempts: 7, bestScore: 85, avgTimePerQuiz: 52 },
-      { username: 'Stefan Stefanović', avgScore: 78, attempts: 11, bestScore: 83, avgTimePerQuiz: 58 },
-      { username: 'Sara Savić', avgScore: 75, attempts: 5, bestScore: 80, avgTimePerQuiz: 47 },
-      { username: 'Luka Lukić', avgScore: 72, attempts: 8, bestScore: 78, avgTimePerQuiz: 62 },
-      { username: 'Ema Erić', avgScore: 70, attempts: 6, bestScore: 75, avgTimePerQuiz: 55 }
+  const getColorForIndex = (index) => {
+    const colors = [
+      '#3498db', '#2ecc71', '#e74c3c', '#f39c12',
+      '#9b59b6', '#1abc9c', '#d35400', '#34495e'
     ];
+    return colors[index % colors.length];
   };
 
-  const getMedal = (index) => {
-    if (index === 0) return '🥇';
-    if (index === 1) return '🥈';
-    if (index === 2) return '🥉';
-    return `#${index + 1}`;
+  const generateDemoLeaderboard = () => {
+    console.log('Generating demo leaderboard');
+    
+    const demoData = [
+      { 
+        userId: 'demo-1', 
+        name: 'Ana Petrović', 
+        studentId: 'RA-001/2024', 
+        totalPercentage: 850, 
+        totalQuizzes: 10, 
+        bestPercentage: 98, 
+        averagePercentage: 85, 
+        lastActivity: new Date().toISOString() 
+      },
+      // ... ostali demo podaci
+    ];
+    
+    const demoChartData = demoData.map((student, index) => ({
+      id: student.userId,
+      name: student.name.split(' ')[0],
+      fullName: student.name,
+      score: student.averagePercentage,
+      quizzes: student.totalQuizzes,
+      color: getColorForIndex(index)
+    }));
+    
+    setLeaderboardData(demoData);
+    setChartData(demoChartData);
+    setError('ℹ️ Prikazani su demo podaci. Uradite kviz da biste se pojavili na listi.');
+    setDataSource('demo');
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 90) return '#10b981'; // zeleno
-    if (score >= 80) return '#3b82f6'; // plavo
-    if (score >= 70) return '#f59e0b'; // žuto
-    if (score >= 60) return '#f97316'; // narandžasto
-    return '#ef4444'; // crveno
+  // Dodaj ovu funkciju za sinhronizaciju
+  const syncToFirebase = async () => {
+    try {
+      const localResults = JSON.parse(localStorage.getItem('quizResults') || '[]');
+      if (localResults.length === 0) {
+        alert('Nema lokalnih rezultata za sinhronizaciju.');
+        return;
+      }
+      
+      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+      let added = 0;
+      
+      for (const result of localResults) {
+        try {
+          // Proveri da li već postoji (pojednostavljeno)
+          const firebaseResult = {
+            userId: result.userId || 'local_' + Date.now(),
+            studentName: result.userName || result.studentName || 'Student',
+            email: result.email || '',
+            studentId: result.studentId || '',
+            quizName: result.quizName || 'Agilno IT Poslovanje',
+            percentage: result.percentage || result.score || 0,
+            correctAnswers: result.correctAnswers || 0,
+            totalQuestions: result.totalQuestions || 20,
+            timeSpent: result.timeSpent || 0,
+            mode: result.mode || 'test',
+            submittedAt: serverTimestamp(),
+            createdAt: new Date().toISOString(),
+            source: 'localStorage_sync'
+          };
+          
+          await addDoc(collection(db, "quizResults"), firebaseResult);
+          added++;
+        } catch (error) {
+          console.error('Greška pri sinhronizaciji:', error);
+        }
+      }
+      
+      if (added > 0) {
+        alert(`✅ Sinhronizovano ${added} rezultata u Firebase!`);
+        loadLeaderboard(); // Ponovo učitaj
+      }
+    } catch (error) {
+      console.error('Greška pri sinhronizaciji:', error);
+      alert('❌ Greška pri sinhronizaciji.');
+    }
+  };
+
+  // Komponenta za jednostavan grafikonski prikaz (isti kod)
+  const SimpleBarChart = ({ data }) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="empty-chart">
+          <div className="empty-chart-icon">📊</div>
+          <p>Nema podataka za grafikon</p>
+        </div>
+      );
+    }
+    
+    const maxScore = Math.max(...data.map(d => d.score));
+    
+    return (
+      <div className="simple-bar-chart">
+        <div className="chart-title">Top {data.length} rezultata</div>
+        <div className="chart-bars">
+          {data.map((item, index) => (
+            <div key={item.id || index} className="chart-bar-item">
+              <div className="bar-info">
+                <div className="bar-label">
+                  <span className="bar-name">{item.name}</span>
+                  <span className="bar-score">{item.score}%</span>
+                </div>
+                <div className="bar-container">
+                  <div 
+                    className="bar-fill"
+                    style={{ 
+                      width: `${(item.score / maxScore) * 100}%`,
+                      backgroundColor: item.color
+                    }}
+                  >
+                    <span className="bar-value">{item.score}%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="bar-tooltip">
+                {item.fullName}: {item.score}% prosečno ({item.quizzes} kvizova)
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Komponenta za pie chart (isti kod)
+  const SimplePieChart = ({ data }) => {
+    if (!data || data.length === 0) return null;
+    
+    const total = data.reduce((sum, item) => sum + item.score, 0);
+    let cumulativePercent = 0;
+    
+    return (
+      <div className="simple-pie-chart">
+        <div className="pie-title">Raspodela po proseku</div>
+        <div className="pie-container">
+          <svg width="200" height="200" viewBox="0 0 200 200">
+            {data.map((item, index) => {
+              const percent = (item.score / total) * 100;
+              const startPercent = cumulativePercent;
+              cumulativePercent += percent;
+              
+              const startAngle = (startPercent / 100) * 360;
+              const endAngle = (cumulativePercent / 100) * 360;
+              
+              const startRad = (startAngle - 90) * (Math.PI / 180);
+              const endRad = (endAngle - 90) * (Math.PI / 180);
+              
+              const x1 = 100 + 80 * Math.cos(startRad);
+              const y1 = 100 + 80 * Math.sin(startRad);
+              const x2 = 100 + 80 * Math.cos(endRad);
+              const y2 = 100 + 80 * Math.sin(endRad);
+              
+              const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
+              
+              return (
+                <path
+                  key={index}
+                  d={`M 100 100 L ${x1} ${y1} A 80 80 0 ${largeArcFlag} 1 ${x2} ${y2} Z`}
+                  fill={item.color}
+                  stroke="#fff"
+                  strokeWidth="2"
+                />
+              );
+            })}
+            <circle cx="100" cy="100" r="40" fill="white" />
+            <text x="100" y="100" textAnchor="middle" dy=".3em" className="pie-center-text">
+              Top {data.length}
+            </text>
+          </svg>
+          
+          <div className="pie-legend">
+            {data.map((item, index) => (
+              <div key={index} className="legend-item">
+                <div 
+                  className="legend-color" 
+                  style={{ backgroundColor: item.color }}
+                ></div>
+                <div className="legend-text">
+                  <span className="legend-name">{item.name}</span>
+                  <span className="legend-percent">{item.score}%</span>
+                  <span className="legend-quizzes">({item.quizzes})</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const refreshLeaderboard = () => {
+    loadLeaderboard();
+  };
+
+  const exportToCSV = () => {
+    const csvContent = [
+      ['Rank', 'Ime', 'Indeks', 'Prosek %', 'Najbolji %', 'Broj kvizova', 'Poslednja aktivnost', 'Izvor'],
+      ...leaderboardData.map((student, index) => [
+        index + 1,
+        student.name,
+        student.studentId,
+        `${student.averagePercentage}%`,
+        `${student.bestPercentage}%`,
+        student.totalQuizzes,
+        new Date(student.lastActivity).toLocaleDateString('sr-RS'),
+        dataSource === 'firebase' ? 'Firebase' : 'Local/Demo'
+      ])
+    ].map(row => row.join(',')).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rang-lista-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   if (loading) {
     return (
-      <div className="leaderboard-container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Učitavanje rang liste...</p>
-        </div>
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Učitavanje rang liste...</p>
       </div>
     );
   }
@@ -130,203 +443,219 @@ function Leaderboard() {
   return (
     <div className="leaderboard-container">
       <div className="leaderboard-header">
-        <div className="header-content">
-          <h1>🏆 Rang lista</h1>
-          <p className="subtitle">Najbolji studenti po prosečnom rezultatu</p>
-        </div>
+        <h2>🏆 Rang lista studenata</h2>
+        <p>Pregled najboljih rezultata na kvizovima iz Agilnog IT Poslovanja</p>
         
-        <div className="timeframe-selector">
+        <div className="data-source-info">
+          <span className={`source-badge ${dataSource}`}>
+            {dataSource === 'firebase' ? '🌐 Firebase podaci' : 
+             dataSource === 'local' ? '💾 Lokalni podaci' : 
+             '🎯 Demo podaci'}
+          </span>
+          
+          {dataSource !== 'firebase' && (
+            <button 
+              onClick={syncToFirebase}
+              className="sync-btn"
+              title="Sinhronizuj lokalne rezultate sa Firebase"
+            >
+              🔄 Sinhronizuj sa Firebase
+            </button>
+          )}
+        </div>
+      </div>
+      
+      {error && (
+        <div className={`info-message ${dataSource === 'demo' ? 'demo-message' : ''}`}>
+          {error}
+        </div>
+      )}
+      
+      <div className="leaderboard-controls">
+        <div className="filter-buttons">
           <button 
-            className={timeframe === 'daily' ? 'active' : ''}
-            onClick={() => setTimeframe('daily')}
-          >
-            Dnevno
-          </button>
-          <button 
-            className={timeframe === 'weekly' ? 'active' : ''}
-            onClick={() => setTimeframe('weekly')}
-          >
-            Nedeljno
-          </button>
-          <button 
-            className={timeframe === 'monthly' ? 'active' : ''}
-            onClick={() => setTimeframe('monthly')}
-          >
-            Mesečno
-          </button>
-          <button 
-            className={timeframe === 'all' ? 'active' : ''}
-            onClick={() => setTimeframe('all')}
+            className={`filter-btn ${timeFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setTimeFilter('all')}
           >
             Sve vreme
           </button>
+          <button 
+            className={`filter-btn ${timeFilter === 'week' ? 'active' : ''}`}
+            onClick={() => setTimeFilter('week')}
+          >
+            Poslednjih 7 dana
+          </button>
+          <button 
+            className={`filter-btn ${timeFilter === 'today' ? 'active' : ''}`}
+            onClick={() => setTimeFilter('today')}
+          >
+            Danas
+          </button>
+        </div>
+        
+        <div className="action-buttons">
+          <button onClick={refreshLeaderboard} className="refresh-btn">
+            🔄 Osveži
+          </button>
+          <button onClick={exportToCSV} className="export-btn">
+            📊 Izvezi CSV
+          </button>
         </div>
       </div>
-
-      {error && (
-        <div className="error-banner">
-         ⚠️ {error} (prikazani su test podaci)
-        </div>
-      )}
-
+      
       <div className="leaderboard-content">
-        <div className="podium">
-          {leaderboard.slice(0, 3).map((player, index) => (
-            <div key={index} className={`podium-place place-${index + 1}`}>
-              <div className="podium-medal">{getMedal(index)}</div>
-              <div className="podium-avatar">
-                {index === 0 && '👑'}
-                {index === 1 && '⭐'}
-                {index === 2 && '🔥'}
-              </div>
-              <div className="podium-name">{player.username}</div>
-              <div className="podium-score" style={{ color: getScoreColor(player.avgScore) }}>
-                {player.avgScore}%
-              </div>
-              <div className="podium-details">
-                <span>{player.attempts} pokušaja</span>
-                <span>Best: {player.bestScore}%</span>
-              </div>
+        <div className="table-section">
+          <h3>📋 Tabela rangiranja</h3>
+          
+          {leaderboardData.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📊</div>
+              <h4>Nema rezultata za prikaz</h4>
+              <p>Niko još nije uradio kviz sa ovim filterima.</p>
+              <button 
+                onClick={() => window.location.href = '/#/kviz'}
+                className="quiz-btn"
+              >
+                🎯 Idi na kviz
+              </button>
             </div>
-          ))}
+          ) : (
+            <div className="table-container">
+              <table className="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Student</th>
+                    <th>Indeks</th>
+                    <th>Prosek</th>
+                    <th>Najbolji</th>
+                    <th>Kvizova</th>
+                    <th>Poslednje</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboardData.map((student, index) => (
+                    <tr key={student.userId} className={index < 3 ? `top-${index + 1}` : ''}>
+                      <td className="rank-cell">
+                        <div className={`rank-badge ${index < 3 ? `rank-${index + 1}` : ''}`}>
+                          {index + 1}
+                        </div>
+                      </td>
+                      <td className="student-cell">
+                        <div className="student-info">
+                          <div className="student-avatar">
+                            {student.name.charAt(0)}
+                          </div>
+                          <div>
+                            <strong>{student.name}</strong>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{student.studentId}</td>
+                      <td className="score-cell">
+                        <span className="score-badge">
+                          {student.averagePercentage}%
+                        </span>
+                      </td>
+                      <td>
+                        <span className="best-score">
+                          {student.bestPercentage}%
+                        </span>
+                      </td>
+                      <td>{student.totalQuizzes}</td>
+                      <td className="date-cell">
+                        {student.lastActivity 
+                          ? new Date(student.lastActivity).toLocaleDateString('sr-RS')
+                          : 'N/A'
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-
-        <div className="leaderboard-table">
-          <div className="table-header">
-            <div className="header-cell rank">Rang</div>
-            <div className="header-cell name">Ime</div>
-            <div className="header-cell score">Prosek</div>
-            <div className="header-cell attempts">Pokušaja</div>
-            <div className="header-cell best">Najbolji</div>
-            <div className="header-cell time">Vreme</div>
+        
+        <div className="chart-section">
+          <h3>📈 Grafički prikaz</h3>
+          <div className="charts-container">
+            <div className="chart-card">
+              <SimpleBarChart data={chartData} />
+            </div>
+            <div className="chart-card">
+              <SimplePieChart data={chartData.slice(0, 5)} />
+            </div>
           </div>
           
-          <div className="table-body">
-            {leaderboard.slice(3).map((player, index) => (
-              <div key={index + 3} className="table-row">
-                <div className="cell rank-cell">
-                  <span className="rank-number">#{index + 4}</span>
-                </div>
-                <div className="cell name-cell">
-                  <div className="player-info">
-                    <span className="player-name">{player.username}</span>
-                    <span className="player-id">{player.studentId || ''}</span>
-                  </div>
-                </div>
-                <div className="cell score-cell">
-                  <div className="score-bar-container">
-                    <div className="score-bar">
-                      <div 
-                        className="score-fill"
-                        style={{ 
-                          width: `${player.avgScore}%`,
-                          backgroundColor: getScoreColor(player.avgScore)
-                        }}
-                      ></div>
-                    </div>
-                    <span className="score-value">{player.avgScore}%</span>
-                  </div>
-                </div>
-                <div className="cell attempts-cell">
-                  <div className="attempts-badge">
-                    {player.attempts}
-                  </div>
-                </div>
-                <div className="cell best-cell">
-                  <span className="best-score" style={{ color: getScoreColor(player.bestScore) }}>
-                    {player.bestScore}%
-                  </span>
-                </div>
-                <div className="cell time-cell">
-                  <span className="time-value">
-                    {player.avgTimePerQuiz}s
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {myStats && (
-          <div className="my-stats-panel">
-            <h3>📊 Tvoji rezultati</h3>
-            <div className="my-stats-grid">
-              <div className="stat-card">
-                <div className="stat-icon">📈</div>
+          <div className="stats-summary">
+            <h4>📊 Statistika rang liste</h4>
+            <div className="stats-grid">
+              <div className="stat-item">
+                <div className="stat-icon">👥</div>
                 <div className="stat-content">
-                  <div className="stat-value">{myStats.avgScore}%</div>
-                  <div className="stat-label">Prosek</div>
+                  <div className="stat-value">{leaderboardData.length}</div>
+                  <div className="stat-label">Studenata</div>
                 </div>
               </div>
-              
-              <div className="stat-card">
-                <div className="stat-icon">🎯</div>
-                <div className="stat-content">
-                  <div className="stat-value">{myStats.attempts}</div>
-                  <div className="stat-label">Pokušaja</div>
-                </div>
-              </div>
-              
-              <div className="stat-card">
-                <div className="stat-icon">🏆</div>
-                <div className="stat-content">
-                  <div className="stat-value">#{myStats.rank}</div>
-                  <div className="stat-label">Tvoj rang</div>
-                </div>
-              </div>
-              
-              <div className="stat-card">
+              <div className="stat-item">
                 <div className="stat-icon">⭐</div>
                 <div className="stat-content">
-                  <div className="stat-value">{myStats.bestScore}%</div>
-                  <div className="stat-label">Najbolji rezultat</div>
+                  <div className="stat-value">
+                    {leaderboardData.length > 0 ? `${leaderboardData[0].averagePercentage}%` : '0%'}
+                  </div>
+                  <div className="stat-label">Najbolji prosek</div>
                 </div>
               </div>
-              
-              <div className="stat-card">
-                <div className="stat-icon">⏱️</div>
+              <div className="stat-item">
+                <div className="stat-icon">📝</div>
                 <div className="stat-content">
-                  <div className="stat-value">{myStats.avgTime}s</div>
-                  <div className="stat-label">Prosečno vreme</div>
+                  <div className="stat-value">
+                    {leaderboardData.length > 0 
+                      ? Math.round(leaderboardData.reduce((sum, s) => sum + s.totalQuizzes, 0) / leaderboardData.length)
+                      : 0
+                    }
+                  </div>
+                  <div className="stat-label">Prosečno kvizova</div>
                 </div>
               </div>
-              
-              <div className="stat-card">
+              <div className="stat-item">
                 <div className="stat-icon">📅</div>
                 <div className="stat-content">
-                  <div className="stat-value">Dan 15</div>
-                  <div className="stat-label">Streak</div>
+                  <div className="stat-value">
+                    {leaderboardData.length > 0
+                      ? new Date(Math.max(...leaderboardData.map(s => new Date(s.lastActivity))))?.toLocaleDateString('sr-RS')?.split('.')[0]
+                      : 'N/A'
+                    }
+                  </div>
+                  <div className="stat-label">Poslednji kviz</div>
                 </div>
               </div>
             </div>
-            
-            <div className="progress-tip">
-              <span className="tip-icon">💡</span>
-              <p>
-                Da bi se popeo na rang listu, pokušaj da ostvariš prosek iznad 85% 
-                i rešiš više od 10 kvizova nedeljno!
-              </p>
-            </div>
           </div>
-        )}
-
-        <div className="leaderboard-actions">
-          <button 
-            className="refresh-btn"
-            onClick={fetchLeaderboard}
-            disabled={loading}
-          >
-            🔄 Osveži rang listu
-          </button>
-          <button 
-            className="share-btn"
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
-              alert('Link kopiran u clipboard!');
-            }}
-          >
-            📋 Podeli rang listu
-          </button>
+        </div>
+      </div>
+      
+      <div className="leaderboard-footer">
+        <div className="legend">
+          <div className="legend-item">
+            <div className="legend-color rank-1"></div>
+            <span>1. mesto</span>
+          </div>
+          <div className="legend-item">
+            <div className="legend-color rank-2"></div>
+            <span>2. mesto</span>
+          </div>
+          <div className="legend-item">
+            <div className="legend-color rank-3"></div>
+            <span>3. mesto</span>
+          </div>
+        </div>
+        
+        <div className="update-info">
+          <small>
+            Poslednje ažuriranje: {new Date().toLocaleString('sr-RS')}
+          </small>
         </div>
       </div>
     </div>

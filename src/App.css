@@ -721,3 +721,59 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Na kraj App.css dodajte */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #2196F3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+/* Stilovi za badge */
+.pending-badge {
+  background: #fff3cd;
+  color: #856404;
+  padding: 3px 10px;
+  border-radius: 15px;
+  font-size: 12px;
+  margin-left: 10px;
+}
+
+.user-role {
+  padding: 3px 10px;
+  border-radius: 15px;
+  font-size: 12px;
+  margin-left: 10px;
+}
+
+.user-role.admin {
+  background: #ff9800;
+  color: white;
+}
+
+.user-role.professor {
+  background: #2196F3;
+  color: white;
+}
+
+.user-role.student {
+  background: #4CAF50;
+  color: white;
+}

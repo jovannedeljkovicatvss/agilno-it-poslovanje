@@ -431,3 +431,149 @@
   background: #4338ca;
   transform: translateY(-2px);
 }
+
+/* Quiz.css - DODAJ OVE STILOVE */
+
+.saving-indicator {
+  text-align: center;
+  padding: 15px;
+  background: #fff3cd;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #0d6efd;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.save-error {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+
+.grade-evaluation {
+  text-align: center;
+  margin: 25px 0;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 10px;
+}
+
+.grade {
+  font-size: 24px;
+  font-weight: bold;
+  padding: 10px 20px;
+  border-radius: 8px;
+  display: inline-block;
+  margin: 10px;
+}
+
+.grade.excellent {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #333;
+}
+
+.grade.very-good {
+  background: linear-gradient(135deg, #4CAF50, #45a049);
+  color: white;
+}
+
+.grade.good {
+  background: linear-gradient(135deg, #2196F3, #1976D2);
+  color: white;
+}
+
+.grade.sufficient {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+  color: white;
+}
+
+.grade.insufficient {
+  background: linear-gradient(135deg, #f44336, #d32f2f);
+  color: white;
+}
+
+.grade-info {
+  margin-top: 15px;
+  font-size: 16px;
+}
+
+.result-note {
+  text-align: center;
+  margin-top: 20px;
+  padding: 10px;
+  background: #e8f4fd;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.professor-btn {
+  background: #6f42c1 !important;
+  color: white !important;
+}
+
+.student-info {
+  text-align: center;
+  margin-top: 15px;
+  padding: 10px;
+  background: #f0f5ff;
+  border-radius: 8px;
+}
+
+.timer-label {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 5px;
+}
+
+.jump-more {
+  color: #666;
+  font-size: 14px;
+  margin-left: 10px;
+}
+
+/* Dodaj na kraj Quiz.css */
+
+.save-status {
+  animation: fadeIn 0.5s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.saving-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+  background: #e8f4fd;
+  border-radius: 5px;
+  margin: 10px 0;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #2196F3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
